@@ -1,12 +1,12 @@
-use std::collections::HashMap;
 use clap::Parser;
 use espn_fantasy_football::api::{
     client::EspnClient,
     id_maps::PositionId,
     matchup::{Matchup, RosterSlot, TeamMatchupPerformance},
     player::PlayerId,
-    team::TeamId,
+    team::{TeamId},
 };
+use std::{collections::HashMap, ops::Add};
 #[derive(Parser)]
 struct Args {
     #[arg(long, env = "SWID", long_help = "SWID Cookie value from espn.com")]
@@ -54,39 +54,86 @@ async fn main() {
             .get_matchups_for_week(cli.season, cli.week, cli.week)
             .await;
         let deets = bench_king_details_for_week(matchup_data, &roster_target);
-        let the_king = deets
-            .iter()
-            .max_by_key(|x| (x.1.optimal_points - x.1.actual_points) as i32);
-        let the_king = the_king.unwrap();
+        let standings = bench_king_standing_from_team_map(deets);
+        let the_king = standings.get(0).unwrap();
+
         println!(
             "Bench King for Week {} was {} with {} points left benched.",
             cli.week,
-            teams.iter().find(|x| &x.id == the_king.0).unwrap().name,
+            teams.iter().find(|x| &x.id == &the_king.0).unwrap().name,
             the_king.1.suboptimal_points()
-        )
+        );
+
+        println!("======= Week Standings =======");
+        for (index, (team, stats)) in standings.iter().enumerate() {
+            let team_detail = teams.iter().find(|x| &x.id == team).unwrap();
+            println!(
+                "In place {}, team {} left {} points on the bench.",
+                index + 1,
+                team_detail.name,
+                stats.suboptimal_points().round()
+            )
+        }
     } else {
-        //TODO
-    
         let mut team_score_by_week: HashMap<TeamId, HashMap<u8, ProgressTracker>> = HashMap::new();
-        for week in 1..cli.week {
+        for week in 1..=cli.week {
             let matchup_data = client
-                .get_matchups_for_week(cli.season, cli.week, cli.week)
+                .get_matchups_for_week(cli.season, week, week)
                 .await;
             let deets = bench_king_details_for_week(matchup_data, &roster_target);
-            //weeks.entry(week).or_insert(deets);
             for (team, data) in deets {
-                team_score_by_week.entry(team)
-                .or_insert(HashMap::new())
-                .entry(week).or_insert(data);
-    
+                 team_score_by_week
+                    .entry(team)
+                    .or_insert(HashMap::new())
+                    .entry(week)
+                    .or_insert(data);
             }
         }
-        //team_score_by_week.iter().fold(HashMap::new())
+    
+        let final_tally = team_score_by_week
+            .iter()
+            .fold(HashMap::new(), |mut acc, r| {
+                let total = r.1.iter().fold(
+                    ProgressTracker {
+                        actual_points: 0.0,
+                        optimal_points: 0.0,
+                        zero_point_starters: 0,
+                    },
+                    |gather, (_week, data)| {
+                        gather + *data
+                    },
+                );
+                acc.entry(r.0.clone()).or_insert(total);
+                acc
+            });
+        let standings = bench_king_standing_from_team_map(final_tally);
+        let the_king = standings.get(0).unwrap();
+        println!(
+            "Bench King through week {} was {} with {} points left benched.",
+            cli.week,
+            teams.iter().find(|x| &x.id == &the_king.0).unwrap().name,
+            the_king.1.suboptimal_points()
+        );
+        println!("======= Overall Standings =======");
+        for (index, (team, stats)) in standings.iter().enumerate() {
+            let team_detail = teams.iter().find(|x| &x.id == team).unwrap();
+            println!(
+                "In place {}, team {} left ~{} points on the bench.",
+                index + 1,
+                team_detail.name,
+                stats.suboptimal_points().round(),
+            )
+        }
     }
-    // for (team, data) in deets {
-    //     let team_data = teams.iter().find(|x| x.id == team).unwrap();
-    //     println!("Team {}; {:?}", team_data.name, data)
-    // }
+}
+
+fn bench_king_standing_from_team_map(
+    data: HashMap<TeamId, ProgressTracker>,
+) -> Vec<(TeamId, ProgressTracker)> {
+    let mut output = data.iter().map(|x| (*x.0, *x.1)).collect::<Vec<_>>();
+    output.sort_by_key(|x| x.1.suboptimal_points() as i32);
+    output.reverse();
+    output
 }
 
 fn bench_king_details_for_week(
@@ -96,11 +143,8 @@ fn bench_king_details_for_week(
     let mut week_data = HashMap::new();
 
     for matchup in data {
-        let mut p0 = analyze_performance(&matchup.away, &roster_target);
-        let mut p1 = analyze_performance(&matchup.home, &roster_target);
-        if p0.actual_points > p1.actual_points {
-            p0.won_game = true;
-        } else { p1.won_game = true }
+        let p0 = analyze_performance(&matchup.away, &roster_target);
+        let p1 = analyze_performance(&matchup.home, &roster_target);
         week_data.entry(matchup.away.team_id.clone()).or_insert(p0);
         week_data.entry(matchup.home.team_id.clone()).or_insert(p1);
     }
@@ -154,7 +198,6 @@ fn slot_in_roster(
             };
             acc
         }),
-        won_game: false
     };
     let mut drafted: Vec<PlayerId> = Vec::new();
     for slot in roster {
@@ -177,15 +220,24 @@ fn slot_in_roster(
     }
     return opt;
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ProgressTracker {
     pub optimal_points: f32,
     pub actual_points: f32,
     pub zero_point_starters: i8,
-    pub won_game: bool,
 }
 impl ProgressTracker {
-    pub fn suboptimal_points(&self) -> f32
- {
-    self.optimal_points - self.actual_points
- }}
+    pub fn suboptimal_points(&self) -> f32 {
+        self.optimal_points - self.actual_points
+    }
+}
+impl Add for ProgressTracker {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self {
+            zero_point_starters: self.zero_point_starters + other.zero_point_starters,
+            optimal_points: self.optimal_points + other.optimal_points,
+            actual_points: self.actual_points + other.actual_points
+        }
+    }
+}
