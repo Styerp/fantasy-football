@@ -2,7 +2,7 @@ use clap::Parser;
 use espn_fantasy_football::api::{
     client::EspnClient,
     id_maps::PositionId,
-    matchup::{Matchup, RosterSlot, TeamMatchupPerformance},
+    matchup::{Matchup, TeamMatchupPerformance},
     player::PlayerId,
     team::TeamId,
 };
@@ -47,7 +47,7 @@ async fn main() {
     let league_settings = client.get_league_settings(cli.season).await;
 
     let teams = client.get_team_data(cli.season).await;
-    let roster_target = roster_for_slotting(league_settings.roster_settings.lineup_slot_counts);
+    let roster_target = sort_roster_slots_by_restrictivness(league_settings.roster_settings.lineup_slot_counts);
 
     if !cli.comprehensive {
         let matchup_data = client
@@ -133,6 +133,11 @@ fn bench_king_standing_from_team_map(
     output
 }
 
+
+/// Flatten a week of matchups into a HashMap of Team and ProgressTracker
+/// # Arguments
+/// * data - A vector of Matchup objects which are the head-to-head matches for the week, from the ESPN Api.
+/// * roster_target - the output of sort_roster_slots_by_restrictivness
 fn bench_king_details_for_week(
     data: Vec<Matchup>,
     roster_target: &Vec<(PositionId, i8)>,
@@ -140,16 +145,16 @@ fn bench_king_details_for_week(
     let mut week_data = HashMap::new();
 
     for matchup in data {
-        let p0 = analyze_performance(&matchup.away, &roster_target);
-        let p1 = analyze_performance(&matchup.home, &roster_target);
+        let p0 = calculate_optimal_performance(&matchup.away, &roster_target);
+        let p1 = calculate_optimal_performance(&matchup.home, &roster_target);
         week_data.entry(matchup.away.team_id.clone()).or_insert(p0);
         week_data.entry(matchup.home.team_id.clone()).or_insert(p1);
     }
     week_data
 }
 
-/// Takes a map of Positions and their limits and creates a sorted
-fn roster_for_slotting(position_limits: HashMap<PositionId, i8>) -> Vec<(PositionId, i8)> {
+/// Takes a map of Positions and their limits and creates a sorted vec based on position length, which maps to restrictiveness of position.
+fn sort_roster_slots_by_restrictivness(position_limits: HashMap<PositionId, i8>) -> Vec<(PositionId, i8)> {
     let mut roster = HashMap::new();
     for (position, count) in position_limits {
         if !["Bench", "IR"].contains(&position.to_string()) && count > 0 {
@@ -164,31 +169,35 @@ fn roster_for_slotting(position_limits: HashMap<PositionId, i8>) -> Vec<(Positio
     roster
 }
 
-fn analyze_performance(
+/// Takes a team's actual performance and calculates their optimal performance, based on number of roster
+/// slots that can be filled for a given position at a time.
+///
+/// # Arguments
+/// * performance -
+/// Actual player performances for the week.
+///
+/// * slots -
+/// A vector of position and number of slots for that position, sorted by how restrictive the position is.
+/// A position is less restrictive if other positions can fill it (e.g. a WR can fill a WR/RB position)
+fn calculate_optimal_performance(
     performance: &TeamMatchupPerformance,
     slots: &Vec<(PositionId, i8)>,
 ) -> ProgressTracker {
+    
+    //Sort roster so highest scorer is first.
     let mut roster = match &performance.roster_for_current_scoring_period {
         Some(r) => r.entries.clone(),
         None => panic!("No roster"),
     };
-    roster.sort_by_key(|x| x.player_pool_entry.applied_stat_total as i64);
+    roster.sort_by_key(|x| x.player_pool_entry.applied_stat_total as i32);
     roster.reverse();
 
-    let optimal = slot_in_roster(roster, slots, performance.total_points);
-    return optimal;
-}
-
-fn slot_in_roster(
-    people: Vec<RosterSlot>,
-    roster: &Vec<(PositionId, i8)>,
-    actual: f32,
-) -> ProgressTracker {
     let mut opt = ProgressTracker {
         optimal_points: 0.0,
-        actual_points: actual,
-        zero_point_starters: people.iter().fold(0, |mut acc, x| {
-            if [PositionId(21), PositionId(23)].contains(&x.lineup_slot_id)
+        actual_points: performance.total_points,
+        zero_point_starters: roster.iter().fold(0, |mut acc, x| {
+            // "Bench" and "IR" aren't positions that count towards your point total.
+            if ![PositionId(21), PositionId(23)].contains(&x.lineup_slot_id)
                 && x.player_pool_entry.applied_stat_total == 0.0
             {
                 acc += 1;
@@ -196,20 +205,29 @@ fn slot_in_roster(
             acc
         }),
     };
+    // Tally of players we've already allocated to a slot.
     let mut drafted: Vec<PlayerId> = Vec::new();
-    for slot in roster {
-        for _i in 1..=slot.1 {
-            for person in &people {
+    // Remember, slots are most restrictive first, so we'll search for the first (highest scoring)
+    // player who fits a position, then the next, up to {count}.
+    // Because it's most restrictive first, when we get to less restrictive positions, the best players
+    // in a position will have already been placed. The pool of players available for the less restrictive 
+    // slot will be largest and the player with the most points left that fits will be chosen.
+    for (position, count) in slots {
+        for _ in 1..=*count {
+            for person in &roster {
                 if drafted.contains(&person.player_id) {
+                    // Players can only be drafted in a single slot.
+                    // Move on to the next player.
                     continue;
                 } else if person
                     .player_pool_entry
                     .player
                     .eligible_slots
-                    .contains(&slot.0)
+                    .contains(&position)
                 {
                     opt.optimal_points += person.player_pool_entry.applied_stat_total;
                     drafted.push(person.player_id);
+                    // We found a match for this loop. Break out of it.
                     break;
                 }
             }
@@ -217,6 +235,7 @@ fn slot_in_roster(
     }
     return opt;
 }
+
 #[derive(Clone, Copy, Debug)]
 pub struct ProgressTracker {
     pub optimal_points: f32,
