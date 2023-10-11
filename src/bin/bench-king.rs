@@ -4,7 +4,7 @@ use espn_fantasy_football::api::{
     id_maps::PositionId,
     matchup::{Matchup, RosterSlot, TeamMatchupPerformance},
     player::PlayerId,
-    team::{TeamId},
+    team::TeamId,
 };
 use std::{collections::HashMap, ops::Add};
 #[derive(Parser)]
@@ -26,12 +26,12 @@ struct Args {
     league: i32,
     #[arg(short, long, long_help = "The year of the season.")]
     season: i16,
-    #[arg(short, long, long_help = "The week of the season")]
+    #[arg(short, long, long_help = "The week of the season.")]
     week: u8,
     #[arg(
         short,
         long,
-        long_help = "When true, will operate on all weeks of the season to the specified week."
+        long_help = r#"When true, will sum all weeks until the specified week and report on bench king across all weeks in aggregate."#
     )]
     comprehensive: bool,
 }
@@ -77,35 +77,32 @@ async fn main() {
     } else {
         let mut team_score_by_week: HashMap<TeamId, HashMap<u8, ProgressTracker>> = HashMap::new();
         for week in 1..=cli.week {
-            let matchup_data = client
-                .get_matchups_for_week(cli.season, week, week)
-                .await;
+            let matchup_data = client.get_matchups_for_week(cli.season, week, week).await;
             let deets = bench_king_details_for_week(matchup_data, &roster_target);
             for (team, data) in deets {
-                 team_score_by_week
+                team_score_by_week
                     .entry(team)
                     .or_insert(HashMap::new())
                     .entry(week)
                     .or_insert(data);
             }
         }
-    
-        let final_tally = team_score_by_week
-            .iter()
-            .fold(HashMap::new(), |mut acc, r| {
-                let total = r.1.iter().fold(
-                    ProgressTracker {
-                        actual_points: 0.0,
-                        optimal_points: 0.0,
-                        zero_point_starters: 0,
-                    },
-                    |gather, (_week, data)| {
-                        gather + *data
-                    },
-                );
-                acc.entry(r.0.clone()).or_insert(total);
-                acc
-            });
+
+        let final_tally =
+            team_score_by_week
+                .iter()
+                .fold(HashMap::new(), |mut acc, (team, week_data)| {
+                    let total = week_data.iter().fold(
+                        ProgressTracker {
+                            actual_points: 0.0,
+                            optimal_points: 0.0,
+                            zero_point_starters: 0,
+                        },
+                        |gather, (_week, data)| gather + *data,
+                    );
+                    acc.entry(team.clone()).or_insert(total);
+                    acc
+                });
         let standings = bench_king_standing_from_team_map(final_tally);
         let the_king = standings.get(0).unwrap();
         println!(
@@ -237,7 +234,7 @@ impl Add for ProgressTracker {
         Self {
             zero_point_starters: self.zero_point_starters + other.zero_point_starters,
             optimal_points: self.optimal_points + other.optimal_points,
-            actual_points: self.actual_points + other.actual_points
+            actual_points: self.actual_points + other.actual_points,
         }
     }
 }
