@@ -1,4 +1,4 @@
-use espn_fantasy_football::api::{client::EspnClient, team::Team};
+use espn_fantasy_football::{client::EspnClient, team::Team};
 use std::env;
 
 #[tokio::main]

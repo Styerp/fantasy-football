@@ -1,5 +1,5 @@
 use clap::Parser;
-use espn_fantasy_football::api::{
+use espn_fantasy_football::{
     client::EspnClient,
     id_maps::PositionId,
     matchup::{Matchup, TeamMatchupPerformance},

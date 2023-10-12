@@ -1,4 +1,4 @@
-use espn_fantasy_football::api::client::EspnClient;
+use espn_fantasy_football::client::EspnClient;
 use std::collections::HashMap;
 
 use clap::Parser;
