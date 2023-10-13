@@ -21,7 +21,7 @@ struct Args {
     )]
     league: i32,
     #[arg(short, long, long_help = "The year of the season.")]
-    season: i16,
+    season: u16,
     // #[arg(short, long, long_help = "The week of the season")]
     // week: u8
 }
@@ -38,11 +38,11 @@ pub struct SimpleRecord {
 async fn main() {
     let cli = Args::parse();
     let client = EspnClient::build(&cli.swid.unwrap(), &cli.espn_s2.unwrap(), cli.league);
-    let teams = client.get_team_data(cli.season).await;
+    let teams = client.teams_for_season(cli.season).await;
     let matchups = client.get_matchups(cli.season).await;
     let mut records = HashMap::new();
-    for team in &teams {
-        records.entry(team.id.clone()).or_insert(SimpleRecord {
+    for (team_id, team) in &teams {
+        records.entry(team_id.clone()).or_insert(SimpleRecord {
             wins: 0,
             losses: 0,
             ties: 0,
@@ -50,7 +50,7 @@ async fn main() {
             points_against: 0.0,
         });
     }
-    for matchup in matchups.schedule {
+    for matchup in matchups {
         let winner = matchup.winner;
         if winner == "HOME" {
             records.entry(matchup.home.team_id).and_modify(|x| {
@@ -83,7 +83,7 @@ async fn main() {
     let mut standings = records
         .into_iter()
         .map(|(x, y)| {
-            let team = teams.iter().find(|t| t.id == x).unwrap();
+            let (_team_id, team) = teams.iter().find(|t| t.0 == &x).unwrap();
             (team.name.clone(), y)
         })
         .collect::<Vec<_>>();

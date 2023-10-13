@@ -25,7 +25,7 @@ struct Args {
     )]
     league: i32,
     #[arg(short, long, long_help = "The year of the season.")]
-    season: i16,
+    season: u16,
     #[arg(short, long, long_help = "The week of the season.")]
     week: u8,
     #[arg(
@@ -46,8 +46,9 @@ async fn main() {
     );
     let league_settings = client.get_league_settings(cli.season).await;
 
-    let teams = client.get_team_data(cli.season).await;
-    let roster_target = sort_roster_slots_by_restrictivness(league_settings.roster_settings.lineup_slot_counts);
+    //let teams = client.get_team_data(cli.season).await;
+    let roster_target =
+        sort_roster_slots_by_restrictivness(league_settings.roster_settings.lineup_slot_counts);
 
     if !cli.comprehensive {
         let matchup_data = client
@@ -60,17 +61,16 @@ async fn main() {
         println!(
             "Bench King for Week {} was {} with {} points left benched.",
             cli.week,
-            teams.iter().find(|x| &x.id == &the_king.0).unwrap().name,
+            client.team_for_season(&the_king.0, cli.season).await.name,
             the_king.1.suboptimal_points()
         );
 
         println!("======= Week Standings =======");
         for (index, (team, stats)) in standings.iter().enumerate() {
-            let team_detail = teams.iter().find(|x| &x.id == team).unwrap();
             println!(
                 "In place {}, team {} left {} points on the bench.",
                 index + 1,
-                team_detail.name,
+                client.team_for_season(team, cli.season).await.name,
                 stats.suboptimal_points().round()
             )
         }
@@ -108,16 +108,15 @@ async fn main() {
         println!(
             "Bench King through week {} was {} with {} points left benched.",
             cli.week,
-            teams.iter().find(|x| &x.id == &the_king.0).unwrap().name,
+            client.team_for_season(&the_king.0, cli.season).await.name,
             the_king.1.suboptimal_points()
         );
         println!("======= Overall Standings =======");
         for (index, (team, stats)) in standings.iter().enumerate() {
-            let team_detail = teams.iter().find(|x| &x.id == team).unwrap();
             println!(
                 "In place {}, team {} left ~{} points on the bench.",
                 index + 1,
-                team_detail.name,
+                client.team_for_season(&team, cli.season).await.name,
                 stats.suboptimal_points().round(),
             )
         }
@@ -132,7 +131,6 @@ fn bench_king_standing_from_team_map(
     output.reverse();
     output
 }
-
 
 /// Flatten a week of matchups into a HashMap of Team and ProgressTracker
 /// # Arguments
@@ -154,7 +152,9 @@ fn bench_king_details_for_week(
 }
 
 /// Takes a map of Positions and their limits and creates a sorted vec based on position length, which maps to restrictiveness of position.
-fn sort_roster_slots_by_restrictivness(position_limits: HashMap<PositionId, i8>) -> Vec<(PositionId, i8)> {
+fn sort_roster_slots_by_restrictivness(
+    position_limits: HashMap<PositionId, i8>,
+) -> Vec<(PositionId, i8)> {
     let mut roster = HashMap::new();
     for (position, count) in position_limits {
         if !["Bench", "IR"].contains(&position.to_string()) && count > 0 {
@@ -183,7 +183,6 @@ fn calculate_optimal_performance(
     performance: &TeamMatchupPerformance,
     slots: &Vec<(PositionId, i8)>,
 ) -> ProgressTracker {
-    
     //Sort roster so highest scorer is first.
     let mut roster = match &performance.roster_for_current_scoring_period {
         Some(r) => r.entries.clone(),
@@ -210,7 +209,7 @@ fn calculate_optimal_performance(
     // Remember, slots are most restrictive first, so we'll search for the first (highest scoring)
     // player who fits a position, then the next, up to {count}.
     // Because it's most restrictive first, when we get to less restrictive positions, the best players
-    // in a position will have already been placed. The pool of players available for the less restrictive 
+    // in a position will have already been placed. The pool of players available for the less restrictive
     // slot will be largest and the player with the most points left that fits will be chosen.
     for (position, count) in slots {
         for _ in 1..=*count {
