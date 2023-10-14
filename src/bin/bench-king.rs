@@ -40,13 +40,12 @@ struct Args {
 async fn main() {
     let cli = Args::parse();
     let client = EspnClient::build(
+        cli.league,
         &cli.swid.clone().unwrap(),
         &cli.espn_s2.unwrap(),
-        cli.league,
     );
     let league_settings = client.get_league_settings(cli.season).await;
 
-    //let teams = client.get_team_data(cli.season).await;
     let roster_target =
         sort_roster_slots_by_restrictivness(league_settings.roster_settings.lineup_slot_counts);
 

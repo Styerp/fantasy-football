@@ -9,7 +9,7 @@ async fn main() {
         .unwrap()
         .parse::<i32>()
         .expect("Number");
-    let client = EspnClient::build(&swid, &espn_s2, league);
+    let client = EspnClient::build(league, &swid, &espn_s2);
     let teams: Vec<Team> = client.get_team_data(2023).await;
     for team in &teams {
         for (stat, val) in &team.values_by_stat {

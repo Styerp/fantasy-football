@@ -37,7 +37,7 @@ pub struct SimpleRecord {
 #[tokio::main]
 async fn main() {
     let cli = Args::parse();
-    let client = EspnClient::build(&cli.swid.unwrap(), &cli.espn_s2.unwrap(), cli.league);
+    let client = EspnClient::build(cli.league, &cli.swid.unwrap(), &cli.espn_s2.unwrap());
     let teams = client.teams_for_season(cli.season).await;
     let matchups = client.get_matchups(cli.season).await;
     let mut records = HashMap::new();
