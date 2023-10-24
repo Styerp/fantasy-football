@@ -6,9 +6,9 @@ So we play Fanatsy Football. One day, we wanted to know who put the WORST team o
 
 For a single week, it's pretty easy to eyeball and figure it out, but how many points did you miss out on? What about cumulatively throughout the year? We've got code for that!
 
-Originally written in python, then lost, then written in Typescript/NodeJS, I wanted to do it in Rust, for personal practice. This repository is scripts reliant on my hand written [ESPN Fanatsy Football API Client](https://github.com/Styerp/espn_rust).
+Originally written in python, then lost, then written in Typescript/NodeJS, I wanted to do it in Rust for personal practice. This repository is scripts reliant on my hand written [ESPN Fanatsy Football API Client](https://github.com/Styerp/espn_rust).
 
-Feel free to borrow for your league! I'm open to requests for feature enhancements or other ideas for fun projects. 
+Feel free to borrow for your league! I'm open to requests for feature enhancements or other ideas for fun projects.
 
 ## Scripts
 

@@ -41,7 +41,7 @@ async fn main() {
     let teams = client.teams_for_season(cli.season).await;
     let matchups = client.get_matchups(cli.season).await;
     let mut records = HashMap::new();
-    for (team_id, team) in &teams {
+    for (team_id, _) in &teams {
         records.entry(team_id.clone()).or_insert(SimpleRecord {
             wins: 0,
             losses: 0,
@@ -52,31 +52,33 @@ async fn main() {
     }
     for matchup in matchups {
         let winner = matchup.winner;
+        let home = matchup.home.unwrap();
+        let away = matchup.away.unwrap();
         if winner == "HOME" {
-            records.entry(matchup.home.team_id).and_modify(|x| {
+            records.entry(home.team_id).and_modify(|x| {
                 x.wins += 1;
-                x.points_against += matchup.away.total_points;
-                x.points_for += matchup.home.total_points;
+                x.points_against += away.total_points;
+                x.points_for += home.total_points;
             });
-            records.entry(matchup.away.team_id).and_modify(|x| {
+            records.entry(away.team_id).and_modify(|x| {
                 x.losses += 1;
 
-                x.points_against += matchup.home.total_points;
-                x.points_for += matchup.away.total_points;
+                x.points_against += home.total_points;
+                x.points_for += away.total_points;
             });
         } else if winner == "AWAY" {
-            records.entry(matchup.away.team_id).and_modify(|x| {
+            records.entry(away.team_id).and_modify(|x| {
                 x.wins += 1;
 
-                x.points_against += matchup.home.total_points;
-                x.points_for += matchup.away.total_points;
+                x.points_against += home.total_points;
+                x.points_for += away.total_points;
             });
 
-            records.entry(matchup.home.team_id).and_modify(|x| {
+            records.entry(home.team_id).and_modify(|x| {
                 x.losses += 1;
 
-                x.points_against += matchup.away.total_points;
-                x.points_for += matchup.home.total_points;
+                x.points_against += away.total_points;
+                x.points_for += home.total_points;
             });
         }
     }

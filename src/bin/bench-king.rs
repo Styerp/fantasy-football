@@ -70,7 +70,7 @@ async fn main() {
                 "In place {}, team {} left {} points on the bench.",
                 index + 1,
                 client.team_for_season(team, cli.season).await.name,
-                stats.suboptimal_points().round()
+                (stats.suboptimal_points() * 100f32).round() / 100.0
             )
         }
     } else {
@@ -126,7 +126,7 @@ fn bench_king_standing_from_team_map(
     data: HashMap<TeamId, ProgressTracker>,
 ) -> Vec<(TeamId, ProgressTracker)> {
     let mut output = data.iter().map(|x| (*x.0, *x.1)).collect::<Vec<_>>();
-    output.sort_by_key(|x| x.1.suboptimal_points() as i32);
+    output.sort_by(|x, y | x.1.suboptimal_points().total_cmp(&y.1.suboptimal_points()));
     output.reverse();
     output
 }
@@ -142,10 +142,12 @@ fn bench_king_details_for_week(
     let mut week_data = HashMap::new();
 
     for matchup in data {
-        let p0 = calculate_optimal_performance(&matchup.away, &roster_target);
-        let p1 = calculate_optimal_performance(&matchup.home, &roster_target);
-        week_data.entry(matchup.away.team_id.clone()).or_insert(p0);
-        week_data.entry(matchup.home.team_id.clone()).or_insert(p1);
+        let away = matchup.away.unwrap();
+        let home = matchup.home.unwrap();
+        let p0 = calculate_optimal_performance(&away, &roster_target);
+        let p1 = calculate_optimal_performance(&home, &roster_target);
+        week_data.entry(away.team_id.clone()).or_insert(p0);
+        week_data.entry(home.team_id.clone()).or_insert(p1);
     }
     week_data
 }
@@ -187,7 +189,7 @@ fn calculate_optimal_performance(
         Some(r) => r.entries.clone(),
         None => panic!("No roster"),
     };
-    roster.sort_by_key(|x| x.player_pool_entry.applied_stat_total as i32);
+    roster.sort_by_key(|x| x.player_pool_entry.applied_stat_total.unwrap() as i32);
     roster.reverse();
 
     let mut opt = ProgressTracker {
@@ -196,7 +198,7 @@ fn calculate_optimal_performance(
         zero_point_starters: roster.iter().fold(0, |mut acc, x| {
             // "Bench" and "IR" aren't positions that count towards your point total.
             if ![PositionId(21), PositionId(23)].contains(&x.lineup_slot_id)
-                && x.player_pool_entry.applied_stat_total == 0.0
+                && x.player_pool_entry.applied_stat_total.unwrap_or(0.0) == 0.0
             {
                 acc += 1;
             };
@@ -223,7 +225,7 @@ fn calculate_optimal_performance(
                     .eligible_slots
                     .contains(&position)
                 {
-                    opt.optimal_points += person.player_pool_entry.applied_stat_total;
+                    opt.optimal_points += person.player_pool_entry.applied_stat_total.unwrap_or(0.0);
                     drafted.push(person.player_id);
                     // We found a match for this loop. Break out of it.
                     break;
