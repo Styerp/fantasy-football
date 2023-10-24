@@ -113,7 +113,7 @@ async fn main() {
         println!("======= Overall Standings =======");
         for (index, (team, stats)) in standings.iter().enumerate() {
             println!(
-                "In place {}, team {} left ~{} points on the bench.",
+                "In place {}, team {} left {} points on the bench.",
                 index + 1,
                 client.team_for_season(&team, cli.season).await.name,
                 stats.suboptimal_points().round(),
